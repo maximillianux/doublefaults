@@ -78,11 +78,15 @@ function MatchRow({ match }: { match: Match }) {
                 </span>
               )}
               <span className={`truncate text-sm ${p.winner ? "font-semibold text-white" : "text-slate-300"}`}>
-                {p.rank != null && (
-                  <span className="mr-1.5 text-xs text-slate-500 font-normal tabular-nums">
-                    #{p.rank}
-                  </span>
-                )}
+                <span
+                  className="mr-1.5 text-xs font-normal tabular-nums"
+                  title={p.rank == null ? "Outside top 150" : undefined}
+                >
+                  {p.rank != null
+                    ? <span className="text-slate-500">#{p.rank}</span>
+                    : <span className="text-slate-600">NR</span>
+                  }
+                </span>
                 {p.name}
                 {p.winner && <span className="ml-1 text-yellow-400">✓</span>}
               </span>
