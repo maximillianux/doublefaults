@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 export const revalidate = 300; // re-fetch every 5 minutes
 
 interface Competitor {
+  id: string;
   winner: boolean;
   linescores?: { value: number; winner: boolean }[];
   score?: string;
@@ -42,6 +43,7 @@ export interface Match {
     name: string;
     countryCode: string; // 3-letter ESPN code, e.g. "srb"
     countryName: string; // full name, e.g. "Serbia"
+    rank: number | null;  // ATP/WTA ranking, null if unranked
     sets: number[];
     winner: boolean;
   }[];
@@ -59,19 +61,28 @@ export interface MatchesResponse {
   fetchedAt: string;
 }
 
-function parseEvent(event: {
-  id: string;
-  name: string;
-  groupings: { competitions: Competition[] }[];
-}): Tournament {
+async function fetchRankings(slug: string): Promise<Map<string, number>> {
+  const url = `https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/rankings`;
+  const res = await fetch(url, { next: { revalidate: 300 } });
+  if (!res.ok) return new Map();
+  const data = await res.json();
+  const map = new Map<string, number>();
+  for (const rank of data.rankings?.[0]?.ranks ?? []) {
+    if (rank.athlete?.id) map.set(rank.athlete.id, rank.current);
+  }
+  return map;
+}
+
+function parseEvent(
+  event: { id: string; name: string; groupings: { competitions: Competition[] }[] },
+  rankings: Map<string, number>
+): Tournament {
   const matches: Match[] = [];
 
   for (const grouping of event.groupings ?? []) {
     for (const comp of grouping.competitions ?? []) {
       const [p1, p2] = comp.competitors ?? [];
       if (!p1 || !p2) continue;
-
-      const noteText = comp.notes?.[0]?.text ?? "";
 
       matches.push({
         id: comp.id,
@@ -80,7 +91,7 @@ function parseEvent(event: {
         statusDetail: comp.status?.type?.detail ?? comp.status?.type?.description ?? "",
         venue: comp.venue?.fullName ?? "",
         court: comp.venue?.court ?? "",
-        summary: noteText,
+        summary: comp.notes?.[0]?.text ?? "",
         players: [p1, p2].map((c) => {
           const flagHref = c.athlete?.flag?.href ?? "";
           const codeMatch = flagHref.match(/\/([a-z]+)\.png$/i);
@@ -88,6 +99,7 @@ function parseEvent(event: {
             name: c.athlete?.displayName ?? c.athlete?.shortName ?? "TBD",
             countryCode: codeMatch ? codeMatch[1].toLowerCase() : "",
             countryName: c.athlete?.flag?.alt ?? "",
+            rank: rankings.get(c.id) ?? null,
             sets: (c.linescores ?? []).map((ls) => ls.value),
             winner: c.winner ?? false,
           };
@@ -100,21 +112,25 @@ function parseEvent(event: {
 }
 
 async function fetchTour(slug: string): Promise<Tournament[]> {
-  const url = `https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/scoreboard`;
-  const res = await fetch(url, { next: { revalidate: 300 } });
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data.events ?? []).map(parseEvent);
+  const [scoreRes, rankings] = await Promise.all([
+    fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/scoreboard`, {
+      next: { revalidate: 300 },
+    }),
+    fetchRankings(slug),
+  ]);
+  if (!scoreRes.ok) return [];
+  const data = await scoreRes.json();
+  return (data.events ?? []).map((e: Parameters<typeof parseEvent>[0]) =>
+    parseEvent(e, rankings)
+  );
 }
 
 export async function GET() {
   const [atp, wta] = await Promise.all([fetchTour("atp"), fetchTour("wta")]);
 
-  const body: MatchesResponse = {
+  return NextResponse.json({
     atp,
     wta,
     fetchedAt: new Date().toISOString(),
-  };
-
-  return NextResponse.json(body);
+  } satisfies MatchesResponse);
 }
