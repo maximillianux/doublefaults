@@ -74,13 +74,15 @@ async function fetchRankings(slug: string): Promise<Map<string, number>> {
 }
 
 function parseEvent(
-  event: { id: string; name: string; groupings: { competitions: Competition[] }[] },
+  event: { id: string; name: string; groupings: { grouping?: { slug?: string }; competitions: Competition[] }[] },
   rankings: Map<string, number>,
-  dateFilter: string  // "YYYY-MM-DD" — keep only matches whose UTC date matches
+  dateFilter: string,  // "YYYY-MM-DD" — keep only matches whose UTC date matches
+  tourPrefix: string   // "mens" | "womens" — keep only matching grouping slugs
 ): Tournament {
   const matches: Match[] = [];
 
   for (const grouping of event.groupings ?? []) {
+    if (!grouping.grouping?.slug?.startsWith(tourPrefix)) continue;
     for (const comp of grouping.competitions ?? []) {
       // ESPN returns the full tournament draw; filter to just the requested day
       if (!comp.date.startsWith(dateFilter)) continue;
@@ -125,8 +127,9 @@ async function fetchTour(slug: string, espnDate: string): Promise<Tournament[]> 
   const data = await scoreRes.json();
   // Convert ESPN date "YYYYMMDD" back to "YYYY-MM-DD" for match filtering
   const dateFilter = `${espnDate.slice(0, 4)}-${espnDate.slice(4, 6)}-${espnDate.slice(6, 8)}`;
+  const tourPrefix = slug === "atp" ? "mens" : "womens";
   return (data.events ?? [])
-    .map((e: Parameters<typeof parseEvent>[0]) => parseEvent(e, rankings, dateFilter))
+    .map((e: Parameters<typeof parseEvent>[0]) => parseEvent(e, rankings, dateFilter, tourPrefix))
     .filter((t: Tournament) => t.matches.length > 0);
 }
 
