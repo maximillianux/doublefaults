@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useMemo } from "react";
 import type { MatchesResponse, Tournament, Match } from "./api/matches/route";
+import type { FormResponse, FormResult } from "./api/form/route";
 
 // ESPN 3-letter code → ISO 3166-1 alpha-2
 const ESPN_TO_ISO2: Record<string, string> = {
@@ -51,6 +52,31 @@ function buildDateRange(): Date[] {
   });
 }
 
+function FormDots({ form }: { form: FormResult[] | undefined }) {
+  if (!form) {
+    // loading skeleton — 10 dim dots
+    return (
+      <div className="flex gap-0.5 mt-1">
+        {Array.from({ length: 10 }).map((_, i) => (
+          <div key={i} className="w-2 h-2 rounded-sm bg-white/10 animate-pulse" />
+        ))}
+      </div>
+    );
+  }
+  if (!form.length) return null;
+  return (
+    <div className="flex gap-0.5 mt-1">
+      {form.map((r, i) => (
+        <div
+          key={i}
+          title={r === "W" ? "Win" : "Loss"}
+          className={`w-2 h-2 rounded-sm ${r === "W" ? "bg-green-500" : "bg-red-500/80"}`}
+        />
+      ))}
+    </div>
+  );
+}
+
 const STATE_LABEL: Record<string, { label: string; color: string }> = {
   pre:  { label: "Scheduled", color: "text-slate-400" },
   in:   { label: "Live",      color: "text-green-400" },
@@ -66,7 +92,7 @@ function SetScore({ sets, winner }: { sets: number[]; winner: boolean }) {
   );
 }
 
-function MatchRow({ match }: { match: Match }) {
+function MatchRow({ match, formData }: { match: Match; formData: FormResponse }) {
   const [p1, p2] = match.players;
   const st = STATE_LABEL[match.state] ?? STATE_LABEL.pre;
 
@@ -96,19 +122,22 @@ function MatchRow({ match }: { match: Match }) {
                   {toFlagEmoji(p.countryCode)}
                 </span>
               )}
-              <span className={`truncate text-sm ${p.winner ? "font-semibold text-white" : "text-slate-300"}`}>
-                <span
-                  className="mr-1.5 text-xs font-normal tabular-nums"
-                  title={p.rank == null ? "Outside top 150" : undefined}
-                >
-                  {p.rank != null
-                    ? <span className="text-slate-500">#{p.rank}</span>
-                    : <span className="text-slate-600">NR</span>
-                  }
+              <div className="min-w-0">
+                <span className={`text-sm ${p.winner ? "font-semibold text-white" : "text-slate-300"}`}>
+                  <span
+                    className="mr-1.5 text-xs font-normal tabular-nums"
+                    title={p.rank == null ? "Outside top 150" : undefined}
+                  >
+                    {p.rank != null
+                      ? <span className="text-slate-500">#{p.rank}</span>
+                      : <span className="text-slate-600">NR</span>
+                    }
+                  </span>
+                  {p.name}
+                  {p.winner && <span className="ml-1 text-yellow-400">✓</span>}
                 </span>
-                {p.name}
-                {p.winner && <span className="ml-1 text-yellow-400">✓</span>}
-              </span>
+                <FormDots form={formData[p.athleteId]} />
+              </div>
             </div>
             <SetScore sets={p.sets} winner={p.winner} />
           </div>
@@ -130,7 +159,7 @@ function MatchRow({ match }: { match: Match }) {
   );
 }
 
-function MatchGrid({ matches, label }: { matches: Match[]; label?: string }) {
+function MatchGrid({ matches, label, formData }: { matches: Match[]; label?: string; formData: FormResponse }) {
   if (!matches.length) return null;
   return (
     <div className="space-y-2">
@@ -141,14 +170,14 @@ function MatchGrid({ matches, label }: { matches: Match[]; label?: string }) {
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {matches.map((m) => (
-          <MatchRow key={m.id} match={m} />
+          <MatchRow key={m.id} match={m} formData={formData} />
         ))}
       </div>
     </div>
   );
 }
 
-function TournamentSection({ tournament }: { tournament: Tournament }) {
+function TournamentSection({ tournament, formData }: { tournament: Tournament; formData: FormResponse }) {
   const live     = tournament.matches.filter((m) => m.state === "in");
   const finished = tournament.matches.filter((m) => m.state === "post");
   const upcoming = tournament.matches.filter((m) => m.state === "pre");
@@ -165,9 +194,9 @@ function TournamentSection({ tournament }: { tournament: Tournament }) {
           {live.length > 0 && <span className="ml-2 text-green-400">● {live.length} live</span>}
         </span>
       </h2>
-      <MatchGrid matches={live}     label={showLabels ? "Live"      : undefined} />
-      <MatchGrid matches={finished} label={showLabels ? "Results"   : undefined} />
-      <MatchGrid matches={upcoming} label={showLabels ? "Upcoming"  : undefined} />
+      <MatchGrid matches={live}     label={showLabels ? "Live"     : undefined} formData={formData} />
+      <MatchGrid matches={finished} label={showLabels ? "Results"  : undefined} formData={formData} />
+      <MatchGrid matches={upcoming} label={showLabels ? "Upcoming" : undefined} formData={formData} />
     </section>
   );
 }
@@ -183,14 +212,31 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<Tab>("atp");
+  const [formData, setFormData] = useState<FormResponse>({});
 
+  // Fetch matches whenever date changes
   useEffect(() => {
     setLoading(true);
     setError(false);
     setData(null);
+    setFormData({});
     fetch(`/api/matches?date=${localDateStr(selectedDate)}`)
       .then((r) => r.json())
-      .then((d) => { setData(d); setLoading(false); })
+      .then((d: MatchesResponse) => {
+        setData(d);
+        setLoading(false);
+
+        // After matches load, lazily fetch form for all players
+        const ids = [...d.atp, ...d.wta]
+          .flatMap((t) => t.matches.flatMap((m) => m.players.map((p) => p.athleteId)))
+          .filter(Boolean);
+        const unique = [...new Set(ids)];
+        if (!unique.length) return;
+        fetch(`/api/form?ids=${unique.join(",")}`)
+          .then((r) => r.json())
+          .then(setFormData)
+          .catch(() => {/* form is best-effort */});
+      })
       .catch(() => { setError(true); setLoading(false); });
   }, [selectedDate]);
 
@@ -292,7 +338,7 @@ export default function HomePage() {
               {tournaments.length} tournament{tournaments.length !== 1 ? "s" : ""} · {totalMatches} match{totalMatches !== 1 ? "es" : ""}
             </p>
             {tournaments.map((t) => (
-              <TournamentSection key={t.id} tournament={t} />
+              <TournamentSection key={t.id} tournament={t} formData={formData} />
             ))}
           </>
         )}

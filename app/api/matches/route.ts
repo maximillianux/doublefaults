@@ -40,10 +40,11 @@ export interface Match {
   court: string;
   summary: string;
   players: {
+    athleteId: string;
     name: string;
-    countryCode: string; // 3-letter ESPN code, e.g. "srb"
-    countryName: string; // full name, e.g. "Serbia"
-    rank: number | null;  // ATP/WTA ranking, null if unranked
+    countryCode: string;
+    countryName: string;
+    rank: number | null;
     sets: number[];
     winner: boolean;
   }[];
@@ -102,6 +103,7 @@ function parseEvent(
           const flagHref = c.athlete?.flag?.href ?? "";
           const codeMatch = flagHref.match(/\/([a-z]+)\.png$/i);
           return {
+            athleteId: c.id,
             name: c.athlete?.displayName ?? c.athlete?.shortName ?? "TBD",
             countryCode: codeMatch ? codeMatch[1].toLowerCase() : "",
             countryName: c.athlete?.flag?.alt ?? "",
