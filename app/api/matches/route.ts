@@ -75,12 +75,16 @@ async function fetchRankings(slug: string): Promise<Map<string, number>> {
 
 function parseEvent(
   event: { id: string; name: string; groupings: { competitions: Competition[] }[] },
-  rankings: Map<string, number>
+  rankings: Map<string, number>,
+  dateFilter: string  // "YYYY-MM-DD" — keep only matches whose UTC date matches
 ): Tournament {
   const matches: Match[] = [];
 
   for (const grouping of event.groupings ?? []) {
     for (const comp of grouping.competitions ?? []) {
+      // ESPN returns the full tournament draw; filter to just the requested day
+      if (!comp.date.startsWith(dateFilter)) continue;
+
       const [p1, p2] = comp.competitors ?? [];
       if (!p1 || !p2) continue;
 
@@ -119,9 +123,11 @@ async function fetchTour(slug: string, espnDate: string): Promise<Tournament[]> 
   ]);
   if (!scoreRes.ok) return [];
   const data = await scoreRes.json();
-  return (data.events ?? []).map((e: Parameters<typeof parseEvent>[0]) =>
-    parseEvent(e, rankings)
-  );
+  // Convert ESPN date "YYYYMMDD" back to "YYYY-MM-DD" for match filtering
+  const dateFilter = `${espnDate.slice(0, 4)}-${espnDate.slice(4, 6)}-${espnDate.slice(6, 8)}`;
+  return (data.events ?? [])
+    .map((e: Parameters<typeof parseEvent>[0]) => parseEvent(e, rankings, dateFilter))
+    .filter((t: Tournament) => t.matches.length > 0);
 }
 
 export async function GET(req: Request) {
