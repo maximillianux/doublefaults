@@ -111,11 +111,10 @@ function parseEvent(
   return { id: event.id, name: event.name, matches };
 }
 
-async function fetchTour(slug: string): Promise<Tournament[]> {
+async function fetchTour(slug: string, espnDate: string): Promise<Tournament[]> {
+  const scoreUrl = `https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/scoreboard?dates=${espnDate}`;
   const [scoreRes, rankings] = await Promise.all([
-    fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/scoreboard`, {
-      next: { revalidate: 300 },
-    }),
+    fetch(scoreUrl, { next: { revalidate: 300 } }),
     fetchRankings(slug),
   ]);
   if (!scoreRes.ok) return [];
@@ -125,8 +124,15 @@ async function fetchTour(slug: string): Promise<Tournament[]> {
   );
 }
 
-export async function GET() {
-  const [atp, wta] = await Promise.all([fetchTour("atp"), fetchTour("wta")]);
+export async function GET(req: Request) {
+  const { searchParams } = new URL(req.url);
+  // Expect "YYYY-MM-DD" from client; fall back to today UTC
+  const dateParam = searchParams.get("date");
+  const espnDate = dateParam
+    ? dateParam.replace(/-/g, "")
+    : new Date().toISOString().slice(0, 10).replace(/-/g, "");
+
+  const [atp, wta] = await Promise.all([fetchTour("atp", espnDate), fetchTour("wta", espnDate)]);
 
   return NextResponse.json({
     atp,

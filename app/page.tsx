@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import type { MatchesResponse, Tournament, Match } from "./api/matches/route";
 
 // ESPN 3-letter code → ISO 3166-1 alpha-2
@@ -30,6 +30,25 @@ function toFlagEmoji(code: string): string {
   return [...iso2.toUpperCase()].map((c) =>
     String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
   ).join("");
+}
+
+// Returns "YYYY-MM-DD" in local time (no UTC shift)
+function localDateStr(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Build the 7-day window: yesterday + today + 5 future days
+function buildDateRange(): Date[] {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i - 1); // i=0 → yesterday, i=1 → today
+    return d;
+  });
 }
 
 const STATE_LABEL: Record<string, { label: string; color: string }> = {
@@ -140,37 +159,35 @@ function TournamentSection({ tournament }: { tournament: Tournament }) {
 type Tab = "atp" | "wta";
 
 export default function HomePage() {
+  const dates = useMemo(() => buildDateRange(), []);
+  const todayStr = useMemo(() => localDateStr(dates[1]), [dates]); // index 1 = today
+
+  const [selectedDate, setSelectedDate] = useState<Date>(dates[1]);
   const [data, setData] = useState<MatchesResponse | null>(null);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [tab, setTab] = useState<Tab>("atp");
 
   useEffect(() => {
-    fetch("/api/matches")
+    setLoading(true);
+    setError(false);
+    setData(null);
+    fetch(`/api/matches?date=${localDateStr(selectedDate)}`)
       .then((r) => r.json())
-      .then(setData)
-      .catch(() => setError(true));
-  }, []);
+      .then((d) => { setData(d); setLoading(false); })
+      .catch(() => { setError(true); setLoading(false); });
+  }, [selectedDate]);
 
-  const today = new Date().toLocaleDateString("en-US", {
-    weekday: "long",
-    year: "numeric",
-    month: "long",
-    day: "numeric",
-  });
-
+  const selectedStr = localDateStr(selectedDate);
   const tournaments: Tournament[] = data ? data[tab] : [];
   const totalMatches = tournaments.reduce((sum, t) => sum + t.matches.length, 0);
 
   return (
     <main className="min-h-screen bg-[#0a0a14] text-white">
       <header className="border-b border-white/10 sticky top-0 z-10 bg-[#0a0a14]/90 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight">
-              🎾 DoubleFaults
-            </h1>
-            <p className="text-xs text-slate-400 mt-0.5">{today}</p>
-          </div>
+        {/* title row */}
+        <div className="max-w-6xl mx-auto px-4 pt-4 pb-3 flex items-center justify-between gap-4 flex-wrap">
+          <h1 className="text-2xl font-bold tracking-tight">🎾 DoubleFaults</h1>
           {data && (
             <p className="text-xs text-slate-500">
               Updated {new Date(data.fetchedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
@@ -178,6 +195,39 @@ export default function HomePage() {
           )}
         </div>
 
+        {/* date strip */}
+        <div className="max-w-6xl mx-auto px-4 pb-3">
+          <div className="flex gap-1 overflow-x-auto no-scrollbar">
+            {dates.map((d) => {
+              const str = localDateStr(d);
+              const isToday = str === todayStr;
+              const isSelected = str === selectedStr;
+              const dayName = isToday
+                ? "Today"
+                : d.toLocaleDateString("en-US", { weekday: "short" });
+              const dayNum = d.getDate();
+
+              return (
+                <button
+                  key={str}
+                  onClick={() => setSelectedDate(d)}
+                  className={`flex flex-col items-center px-4 py-2 rounded-xl text-xs font-medium shrink-0 transition-colors ${
+                    isSelected
+                      ? "bg-yellow-400 text-black"
+                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                  }`}
+                >
+                  <span className="text-[10px] uppercase tracking-wide font-semibold">
+                    {dayName}
+                  </span>
+                  <span className="text-lg font-bold leading-tight">{dayNum}</span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* tour tabs */}
         <div className="max-w-6xl mx-auto px-4 flex gap-1 pb-3">
           {(["atp", "wta"] as Tab[]).map((t) => (
             <button
@@ -185,7 +235,7 @@ export default function HomePage() {
               onClick={() => setTab(t)}
               className={`px-5 py-1.5 rounded-full text-sm font-semibold transition-colors ${
                 tab === t
-                  ? "bg-yellow-400 text-black"
+                  ? "bg-white/10 text-white"
                   : "text-slate-400 hover:text-white"
               }`}
             >
@@ -202,21 +252,25 @@ export default function HomePage() {
           </p>
         )}
 
-        {!data && !error && (
+        {loading && !error && (
           <div className="flex items-center justify-center py-24">
             <p className="text-slate-400 animate-pulse">Loading matches...</p>
           </div>
         )}
 
-        {data && tournaments.length === 0 && (
+        {!loading && !error && tournaments.length === 0 && (
           <div className="text-center py-24 text-slate-500">
             <p className="text-4xl mb-4">🎾</p>
-            <p className="text-lg font-medium">No {tab.toUpperCase()} matches today</p>
-            <p className="text-sm mt-1">Check back later or try the other tour.</p>
+            <p className="text-lg font-medium">No {tab.toUpperCase()} matches scheduled</p>
+            <p className="text-sm mt-1">
+              {selectedStr > todayStr
+                ? "Schedule may not be confirmed yet — check back closer to the date."
+                : "Try a different date or tour."}
+            </p>
           </div>
         )}
 
-        {data && tournaments.length > 0 && (
+        {!loading && !error && tournaments.length > 0 && (
           <>
             <p className="text-sm text-slate-400">
               {tournaments.length} tournament{tournaments.length !== 1 ? "s" : ""} · {totalMatches} match{totalMatches !== 1 ? "es" : ""}
