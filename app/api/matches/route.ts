@@ -9,7 +9,7 @@ interface Competitor {
   athlete: {
     displayName: string;
     shortName: string;
-    flag?: { alt: string };
+    flag?: { href?: string; alt: string };
   };
 }
 
@@ -40,7 +40,8 @@ export interface Match {
   summary: string;
   players: {
     name: string;
-    country: string;
+    countryCode: string; // 3-letter ESPN code, e.g. "srb"
+    countryName: string; // full name, e.g. "Serbia"
     sets: number[];
     winner: boolean;
   }[];
@@ -80,12 +81,17 @@ function parseEvent(event: {
         venue: comp.venue?.fullName ?? "",
         court: comp.venue?.court ?? "",
         summary: noteText,
-        players: [p1, p2].map((c) => ({
-          name: c.athlete?.displayName ?? c.athlete?.shortName ?? "TBD",
-          country: c.athlete?.flag?.alt ?? "",
-          sets: (c.linescores ?? []).map((ls) => ls.value),
-          winner: c.winner ?? false,
-        })),
+        players: [p1, p2].map((c) => {
+          const flagHref = c.athlete?.flag?.href ?? "";
+          const codeMatch = flagHref.match(/\/([a-z]+)\.png$/i);
+          return {
+            name: c.athlete?.displayName ?? c.athlete?.shortName ?? "TBD",
+            countryCode: codeMatch ? codeMatch[1].toLowerCase() : "",
+            countryName: c.athlete?.flag?.alt ?? "",
+            sets: (c.linescores ?? []).map((ls) => ls.value),
+            winner: c.winner ?? false,
+          };
+        }),
       });
     }
   }

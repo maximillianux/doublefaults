@@ -3,6 +3,35 @@
 import { useEffect, useState } from "react";
 import type { MatchesResponse, Tournament, Match } from "./api/matches/route";
 
+// ESPN 3-letter code → ISO 3166-1 alpha-2
+const ESPN_TO_ISO2: Record<string, string> = {
+  afg:"AF",alb:"AL",alg:"DZ",and:"AD",ang:"AO",arg:"AR",arm:"AM",aruba:"AW",
+  aus:"AU",aut:"AT",aze:"AZ",bah:"BS",ban:"BD",bar:"BB",bel:"BE",ben:"BJ",
+  ber:"BM",bih:"BA",biz:"BZ",blr:"BY",bol:"BO",bot:"BW",bra:"BR",bru:"BN",
+  bul:"BG",can:"CA",cay:"KY",chi:"CL",chn:"CN",civ:"CI",cmr:"CM",col:"CO",
+  crc:"CR",cro:"HR",cub:"CU",cze:"CZ",den:"DK",dom:"DO",ecu:"EC",egy:"EG",
+  esp:"ES",est:"EE",eth:"ET",fin:"FI",fij:"FJ",fra:"FR",gbr:"GB",geo:"GE",
+  ger:"DE",gha:"GH",gre:"GR",gua:"GT",hkg:"HK",hon:"HN",hun:"HU",ina:"ID",
+  ind:"IN",irl:"IE",irn:"IR",irq:"IQ",isl:"IS",isr:"IL",ita:"IT",jam:"JM",
+  jpn:"JP",kaz:"KZ",ken:"KE",kgz:"KG",kor:"KR",ksa:"SA",kuw:"KW",lat:"LV",
+  lba:"LY",lbn:"LB",ltu:"LT",lux:"LU",mac:"MO",mar:"MA",mas:"MY",mda:"MD",
+  mex:"MX",mkd:"MK",mlt:"MT",mon:"MC",moz:"MZ",mri:"MU",ned:"NL",nep:"NP",
+  ngr:"NG",nic:"NI",nor:"NO",nzl:"NZ",oma:"OM",pak:"PK",pan:"PA",par:"PY",
+  per:"PE",phi:"PH",pol:"PL",por:"PT",prk:"KP",pur:"PR",qat:"QA",rom:"RO",
+  rsa:"ZA",rus:"RU",rwa:"RW",sen:"SN",sgp:"SG",slo:"SI",slv:"SV",smr:"SM",
+  srb:"RS",sri:"LK",sud:"SD",sui:"CH",svk:"SK",swe:"SE",syr:"SY",tah:"PF",
+  tan:"TZ",tga:"TO",tha:"TH",tpe:"TW",tri:"TT",tun:"TN",tur:"TR",uae:"AE",
+  uga:"UG",ukr:"UA",uru:"UY",usa:"US",uzb:"UZ",ven:"VE",vie:"VN",zim:"ZW",
+};
+
+function toFlagEmoji(code: string): string {
+  const iso2 = ESPN_TO_ISO2[code.toLowerCase()];
+  if (!iso2) return "🏳";
+  return [...iso2.toUpperCase()].map((c) =>
+    String.fromCodePoint(0x1f1e6 + c.charCodeAt(0) - 65)
+  ).join("");
+}
+
 const STATE_LABEL: Record<string, { label: string; color: string }> = {
   pre:  { label: "Scheduled", color: "text-slate-400" },
   in:   { label: "Live",      color: "text-green-400" },
@@ -40,8 +69,13 @@ function MatchRow({ match }: { match: Match }) {
         {[p1, p2].map((p, i) => (
           <div key={i} className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              {p.country && (
-                <span className="text-xs text-slate-400 w-5 shrink-0">{p.country}</span>
+              {p.countryCode && (
+                <span
+                  title={p.countryName || p.countryCode.toUpperCase()}
+                  className="text-base leading-none shrink-0 cursor-default select-none"
+                >
+                  {toFlagEmoji(p.countryCode)}
+                </span>
               )}
               <span className={`truncate text-sm ${p.winner ? "font-semibold text-white" : "text-slate-300"}`}>
                 {p.name}
