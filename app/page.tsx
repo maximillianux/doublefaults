@@ -115,7 +115,7 @@ function MatchRow({ match }: { match: Match }) {
         ))}
       </div>
 
-      {match.summary && match.state === "post" && (
+      {match.state === "post" && !match.players.some((p) => p.sets.length > 0) && match.summary && (
         <p className="text-xs text-slate-500 pt-1 border-t border-white/10 truncate">
           {match.summary}
         </p>
@@ -130,28 +130,44 @@ function MatchRow({ match }: { match: Match }) {
   );
 }
 
-function TournamentSection({ tournament }: { tournament: Tournament }) {
-  const live = tournament.matches.filter((m) => m.state === "in");
-  const upcoming = tournament.matches.filter((m) => m.state === "pre");
-  const finished = tournament.matches.filter((m) => m.state === "post");
-  const ordered = [...live, ...upcoming, ...finished];
-
+function MatchGrid({ matches, label }: { matches: Match[]; label?: string }) {
+  if (!matches.length) return null;
   return (
-    <section className="space-y-3">
-      <h2 className="text-base font-semibold text-white/80 border-b border-white/10 pb-2">
-        {tournament.name}
-        <span className="ml-2 text-xs font-normal text-slate-500">
-          {tournament.matches.length} match{tournament.matches.length !== 1 ? "es" : ""}
-          {live.length > 0 && (
-            <span className="ml-2 text-green-400">● {live.length} live</span>
-          )}
-        </span>
-      </h2>
+    <div className="space-y-2">
+      {label && (
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-500 pl-1">
+          {label}
+        </p>
+      )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {ordered.map((m) => (
+        {matches.map((m) => (
           <MatchRow key={m.id} match={m} />
         ))}
       </div>
+    </div>
+  );
+}
+
+function TournamentSection({ tournament }: { tournament: Tournament }) {
+  const live     = tournament.matches.filter((m) => m.state === "in");
+  const finished = tournament.matches.filter((m) => m.state === "post");
+  const upcoming = tournament.matches.filter((m) => m.state === "pre");
+  const showLabels = [live, finished, upcoming].filter((g) => g.length > 0).length > 1;
+
+  return (
+    <section className="space-y-4">
+      <h2 className="text-base font-semibold text-white/80 border-b border-white/10 pb-2">
+        {tournament.name}
+        <span className="ml-2 text-xs font-normal text-slate-500">
+          {finished.length > 0 && `${finished.length} result${finished.length !== 1 ? "s" : ""}`}
+          {finished.length > 0 && upcoming.length > 0 && " · "}
+          {upcoming.length > 0 && `${upcoming.length} upcoming`}
+          {live.length > 0 && <span className="ml-2 text-green-400">● {live.length} live</span>}
+        </span>
+      </h2>
+      <MatchGrid matches={live}     label={showLabels ? "Live"      : undefined} />
+      <MatchGrid matches={finished} label={showLabels ? "Results"   : undefined} />
+      <MatchGrid matches={upcoming} label={showLabels ? "Upcoming"  : undefined} />
     </section>
   );
 }
