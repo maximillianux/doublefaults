@@ -78,7 +78,7 @@ async function fetchForm(
   rankings: Map<string, number>
 ): Promise<FormMatch[]> {
   const logRes = await fetch(
-    `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog?season=2026&limit=10`,
+    `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog?season=2026&limit=25`,
     { next: { revalidate: 300 } }
   );
   if (!logRes.ok) return [];
@@ -136,8 +136,9 @@ async function fetchForm(
     const opponent = competitors.find((c) => String(c.id) !== athleteId);
     if (!us || !opponent) continue;
 
-    // Skip in-progress or not-yet-played matches — no winner determined yet
+    // Skip in-progress / not-yet-played (no winner) and byes
     if (!us.winner && !opponent.winner) continue;
+    if (opponent.name?.toLowerCase() === "bye") continue;
 
     matches.push({
       result: us.winner ? "W" : "L",
@@ -149,7 +150,8 @@ async function fetchForm(
     });
   }
 
-  return matches.reverse(); // oldest → newest
+  // Keep the 10 most recent real matches, then reverse to oldest→newest
+  return matches.slice(-10).reverse();
 }
 
 // ─── Handler ───────────────────────────────────────────────────────────────────
