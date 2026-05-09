@@ -98,7 +98,8 @@ async function fetchForm(
         const ref = item.competition?.["$ref"];
         if (!ref) return null;
         try {
-          const res = await fetch(ref, { next: { revalidate: 86400 } });
+          // Use short TTL so in-progress matches aren't frozen in cache
+        const res = await fetch(ref, { next: { revalidate: 300 } });
           return res.ok ? ((await res.json()) as CoreCompetition) : null;
         } catch {
           return null;
@@ -134,6 +135,9 @@ async function fetchForm(
     const us = competitors.find((c) => String(c.id) === athleteId);
     const opponent = competitors.find((c) => String(c.id) !== athleteId);
     if (!us || !opponent) continue;
+
+    // Skip in-progress or not-yet-played matches — no winner determined yet
+    if (!us.winner && !opponent.winner) continue;
 
     matches.push({
       result: us.winner ? "W" : "L",
