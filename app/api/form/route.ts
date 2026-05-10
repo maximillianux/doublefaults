@@ -177,9 +177,9 @@ async function fetchForm(
     });
   }
 
-  // Sort chronologically, take the 10 most recent, display newest first
-  matches.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-  return matches.slice(-10).reverse();
+  // Newest first, capped at 10
+  matches.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  return matches.slice(0, 10);
 }
 
 // ─── Handler ───────────────────────────────────────────────────────────────────
