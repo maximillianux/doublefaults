@@ -19,15 +19,42 @@ const GRASS_KEYWORDS = [
   "wimbledon", "queen's", "queens club", "halle", "s-hertogenbosch",
   "eastbourne", "newport", "mallorca", "boss open", "stuttgart",
   "nottingham", "cinch championship", "libema", "terra wortmann",
+  "rosmalen", "antalya",
 ];
 
 const CLAY_KEYWORDS = [
-  "roland garros", "french open", "monte-carlo", "monte carlo",
-  "internazionali", "bnl", "mutua madrid", "barcelona",
-  "hamburg", "bastad", "nordea", "umag", "croatia open",
-  "kitzbuhel", "gstaad", "swiss open", "bucharest", "budapest",
-  "estoril", "marrakech", "munich", "bmw open", "lyon",
-  "geneva", "houston", "clay court", "atp 250 marrakech",
+  // Grand Slam / Masters clay
+  "roland garros", "french open",
+  "monte-carlo", "monte carlo",
+  "internazionali", "bnl",        // Rome
+  "mutua madrid",                  // Madrid
+  "barcelona",
+  "hamburg",
+  // South America (all clay)
+  "rio open", "rio de janeiro",
+  "buenos aires", "argentina open",
+  "chile open", "santiago",
+  "cordoba", "córdoba",
+  "brasil open", "brasilia",
+  // Other European clay
+  "tiriac",                        // Bucharest / Tiriac Open
+  "bucharest",
+  "budapest",
+  "bastad", "nordea",
+  "umag", "croatia open",
+  "kitzbuhel", "generali open",
+  "gstaad", "swiss open",
+  "estoril",
+  "marrakech", "casablanca",
+  "bmw open", "munich",
+  "lyon",
+  "geneva",
+  "istanbul",
+  "gijon",
+  "srpska",                        // Serbia Open
+  "istanbul",
+  // North America clay
+  "houston", "clay court",
 ];
 
 function surfaceFromEvent(name: string, indoor: boolean): Surface {
