@@ -177,7 +177,8 @@ async function fetchForm(
     });
   }
 
-  // Keep the 10 most recent real matches, then reverse to oldest→newest
+  // Sort chronologically, take the 10 most recent, display newest first
+  matches.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   return matches.slice(-10).reverse();
 }
 
