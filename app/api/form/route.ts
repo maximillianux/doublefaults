@@ -11,7 +11,27 @@ export interface FormMatch {
   opponentRank: number | null;
 }
 
-export type FormResponse = Record<string, FormMatch[]>; // athleteId → last 10 (oldest→newest)
+export type FormResponse = Record<string, FormMatch[]>;
+
+// ─── Concurrency limiter ────────────────────────────────────────────────────────
+// Prevents EMFILE by capping simultaneous HTTP connections.
+
+async function concurrentMap<T, R>(
+  items: T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker() {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await fn(items[i]);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+  return results;
+}
 
 // ─── Surface lookup ────────────────────────────────────────────────────────────
 
@@ -23,22 +43,18 @@ const GRASS_KEYWORDS = [
 ];
 
 const CLAY_KEYWORDS = [
-  // Grand Slam / Masters clay
   "roland garros", "french open",
   "monte-carlo", "monte carlo",
-  "internazionali", "bnl",        // Rome
-  "mutua madrid",                  // Madrid
+  "internazionali", "bnl",
+  "mutua madrid",
   "barcelona",
   "hamburg",
-  // South America (all clay)
   "rio open", "rio de janeiro",
   "buenos aires", "argentina open",
   "chile open", "santiago",
   "cordoba", "córdoba",
   "brasil open", "brasilia",
-  // Other European clay
-  "tiriac",                        // Bucharest / Tiriac Open
-  "bucharest",
+  "tiriac", "bucharest",
   "budapest",
   "bastad", "nordea",
   "umag", "croatia open",
@@ -51,9 +67,7 @@ const CLAY_KEYWORDS = [
   "geneva",
   "istanbul",
   "gijon",
-  "srpska",                        // Serbia Open
-  "istanbul",
-  // North America clay
+  "srpska",
   "houston", "clay court",
 ];
 
@@ -105,7 +119,7 @@ async function fetchForm(
   rankings: Map<string, number>
 ): Promise<FormMatch[]> {
   const logRes = await fetch(
-    `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog?season=2026&limit=25`,
+    `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog?season=2026&limit=20`,
     { next: { revalidate: 300 } }
   );
   if (!logRes.ok) return [];
@@ -115,36 +129,32 @@ async function fetchForm(
     log?.events?.items ?? [];
   if (!items.length) return [];
 
-  // Unique event refs to fetch names
-  const uniqueEventRefs = [...new Set(items.map((it) => it.event?.["$ref"]).filter(Boolean))] as string[];
+  const uniqueEventRefs = [
+    ...new Set(items.map((it) => it.event?.["$ref"]).filter(Boolean)),
+  ] as string[];
 
-  // Fetch competitions + event names in parallel
+  // Cap per-player concurrency at 8 connections
   const [compResults, eventEntries] = await Promise.all([
-    Promise.all(
-      items.map(async (item) => {
-        const ref = item.competition?.["$ref"];
-        if (!ref) return null;
-        try {
-          // Use short TTL so in-progress matches aren't frozen in cache
+    concurrentMap(items, 8, async (item) => {
+      const ref = item.competition?.["$ref"];
+      if (!ref) return null;
+      try {
         const res = await fetch(ref, { next: { revalidate: 300 } });
-          return res.ok ? ((await res.json()) as CoreCompetition) : null;
-        } catch {
-          return null;
-        }
-      })
-    ),
-    Promise.all(
-      uniqueEventRefs.map(async (ref) => {
-        try {
-          const res = await fetch(ref, { next: { revalidate: 86400 } });
-          if (!res.ok) return [ref, ""] as [string, string];
-          const data = await res.json();
-          return [ref, (data.name as string) ?? ""] as [string, string];
-        } catch {
-          return [ref, ""] as [string, string];
-        }
-      })
-    ),
+        return res.ok ? ((await res.json()) as CoreCompetition) : null;
+      } catch {
+        return null;
+      }
+    }),
+    concurrentMap(uniqueEventRefs, 4, async (ref) => {
+      try {
+        const res = await fetch(ref, { next: { revalidate: 86400 } });
+        if (!res.ok) return [ref, ""] as [string, string];
+        const data = await res.json();
+        return [ref, (data.name as string) ?? ""] as [string, string];
+      } catch {
+        return [ref, ""] as [string, string];
+      }
+    }),
   ]);
 
   const eventNameMap = Object.fromEntries(eventEntries);
@@ -163,7 +173,6 @@ async function fetchForm(
     const opponent = competitors.find((c) => String(c.id) !== athleteId);
     if (!us || !opponent) continue;
 
-    // Skip in-progress / not-yet-played (no winner) and byes
     if (!us.winner && !opponent.winner) continue;
     if (opponent.name?.toLowerCase() === "bye") continue;
 
@@ -177,7 +186,6 @@ async function fetchForm(
     });
   }
 
-  // Newest first, capped at 10
   matches.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
   return matches.slice(0, 10);
 }
@@ -196,8 +204,9 @@ export async function GET(req: Request) {
 
   const rankings = await fetchAllRankings();
 
-  const entries = await Promise.all(
-    ids.map(async (id) => [id, await fetchForm(id, rankings)] as [string, FormMatch[]])
+  // Cap top-level athlete concurrency at 6 to avoid EMFILE
+  const entries = await concurrentMap(ids, 6, async (id) =>
+    [id, await fetchForm(id, rankings)] as [string, FormMatch[]]
   );
 
   return NextResponse.json(Object.fromEntries(entries) satisfies FormResponse);
