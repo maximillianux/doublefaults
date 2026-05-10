@@ -100,7 +100,7 @@ function PlayerFormDetail({ name, form }: { name: string; form: FormMatch[] | un
         <p className="text-xs text-slate-600">No recent data</p>
       ) : (
         <div className="space-y-1.5">
-          {[...form].reverse().map((m, i) => {
+          {form.map((m, i) => {
             const surf = SURFACE[m.surface];
             const dateStr = m.date
               ? new Date(m.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
