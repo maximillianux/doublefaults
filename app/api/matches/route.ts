@@ -62,14 +62,61 @@ export interface MatchesResponse {
   fetchedAt: string;
 }
 
+// Strips diacritics and lowercases for fuzzy name matching
+function normName(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
+// Builds a "name:<normalised>" → rank map from JeffSackmann's weekly CSVs.
+// These cover 2000+ players vs ESPN's 150 cap.
+async function fetchExtendedRankings(slug: string): Promise<Map<string, number>> {
+  const org = slug === "atp" ? "tennis_atp" : "tennis_wta";
+  const base = `https://raw.githubusercontent.com/JeffSackmann/${org}/master/${slug}`;
+  try {
+    const [rankText, playerText] = await Promise.all([
+      fetch(`${base}_rankings_current.csv`, { next: { revalidate: 86400 } }).then((r) => r.text()),
+      fetch(`${base}_players.csv`,          { next: { revalidate: 86400 } }).then((r) => r.text()),
+    ]);
+
+    // player_id → "firstname lastname" (normalised)
+    const playerNames = new Map<string, string>();
+    for (const line of playerText.split("\n").slice(1)) {
+      const [id, first, last] = line.split(",");
+      if (id && first && last) playerNames.set(id, normName(`${first} ${last}`));
+    }
+
+    // Find latest date (last non-empty row)
+    const rankLines = rankText.split("\n").filter(Boolean);
+    const latestDate = rankLines.at(-1)?.split(",")[0] ?? "";
+
+    const map = new Map<string, number>();
+    for (const line of rankLines) {
+      const [date, rank, playerId] = line.split(",");
+      if (date !== latestDate) continue;
+      const name = playerNames.get(playerId);
+      if (name && rank) map.set(`name:${name}`, Number(rank));
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 async function fetchRankings(slug: string): Promise<Map<string, number>> {
-  const url = `https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/rankings`;
-  const res = await fetch(url, { next: { revalidate: 300 } });
-  if (!res.ok) return new Map();
-  const data = await res.json();
-  const map = new Map<string, number>();
-  for (const rank of data.rankings?.[0]?.ranks ?? []) {
-    if (rank.athlete?.id) map.set(rank.athlete.id, rank.current);
+  const [espnRes, extended] = await Promise.all([
+    fetch(`https://site.api.espn.com/apis/site/v2/sports/tennis/${slug}/rankings`, {
+      next: { revalidate: 300 },
+    }),
+    fetchExtendedRankings(slug),
+  ]);
+
+  // Start with extended (name-keyed), then overlay ESPN IDs (top 150, authoritative)
+  const map = new Map<string, number>(extended);
+  if (espnRes.ok) {
+    const data = await espnRes.json();
+    for (const rank of data.rankings?.[0]?.ranks ?? []) {
+      if (rank.athlete?.id) map.set(rank.athlete.id, rank.current);
+    }
   }
   return map;
 }
@@ -112,7 +159,9 @@ function parseEvent(
             name: c.athlete?.displayName ?? c.athlete?.shortName ?? "TBD",
             countryCode: codeMatch ? codeMatch[1].toLowerCase() : "",
             countryName: c.athlete?.flag?.alt ?? "",
-            rank: rankings.get(c.id) ?? null,
+            rank: rankings.get(c.id)
+              ?? rankings.get(`name:${normName(c.athlete?.displayName ?? c.athlete?.shortName ?? "")}`)
+              ?? null,
             sets: (c.linescores ?? []).map((ls) => ls.value),
             winner: c.winner ?? false,
           };
