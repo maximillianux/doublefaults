@@ -116,28 +116,39 @@ interface CoreCompetition {
 
 type EventlogItem = { event?: { $ref: string }; competition?: { $ref: string } };
 
-async function fetchEventlogItems(athleteId: string): Promise<EventlogItem[]> {
+async function fetchSeasonItems(athleteId: string, season: number): Promise<EventlogItem[]> {
   const all: EventlogItem[] = [];
   let page = 1;
   const pageSize = 25;
 
-  while (all.length < 40) {  // cap at 40 raw items to avoid runaway
+  while (all.length < 50) {
     const res = await fetch(
       `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog` +
-        `?season=2026&limit=${pageSize}&page=${page}`,
-      { next: { revalidate: 300 } }
+        `?season=${season}&limit=${pageSize}&page=${page}`,
+      { next: { revalidate: season < new Date().getFullYear() ? 86400 : 300 } }
     );
     if (!res.ok) break;
     const data = await res.json();
     const items: EventlogItem[] = data?.events?.items ?? [];
     all.push(...items);
-
     const pageCount: number = data?.events?.pageCount ?? 1;
     if (page >= pageCount || items.length < pageSize) break;
     page++;
   }
 
   return all;
+}
+
+async function fetchEventlogItems(athleteId: string): Promise<EventlogItem[]> {
+  const currentYear = new Date().getFullYear();
+  const current = await fetchSeasonItems(athleteId, currentYear);
+
+  // If we already have plenty, stop here
+  if (current.length >= 20) return current;
+
+  // Supplement with previous season for players with few current-year matches
+  const prev = await fetchSeasonItems(athleteId, currentYear - 1);
+  return [...current, ...prev];
 }
 
 async function fetchForm(
