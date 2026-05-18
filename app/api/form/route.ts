@@ -162,12 +162,43 @@ async function fetchJSChallengerMatches(wantedNorms: Set<string>): Promise<Map<s
 
 // ─── Rankings ──────────────────────────────────────────────────────────────────
 
+async function buildExtendedRankings(slug: "atp" | "wta"): Promise<Map<string, number>> {
+  const org  = slug === "atp" ? "tennis_atp" : "tennis_wta";
+  const base = `https://raw.githubusercontent.com/JeffSackmann/${org}/master/${slug}`;
+  try {
+    const [rankText, playerText] = await Promise.all([
+      fetch(`${base}_rankings_current.csv`, { next: { revalidate: 86400 } }).then((r) => r.text()),
+      fetch(`${base}_players.csv`,          { next: { revalidate: 86400 } }).then((r) => r.text()),
+    ]);
+    const playerNames = new Map<string, string>();
+    for (const line of playerText.split("\n").slice(1)) {
+      const [id, first, last] = line.split(",");
+      if (id && first && last) playerNames.set(id, normName(`${first} ${last}`));
+    }
+    const rankLines  = rankText.split("\n").filter(Boolean);
+    const latestDate = rankLines.at(-1)?.split(",")[0] ?? "";
+    const map        = new Map<string, number>();
+    for (const line of rankLines) {
+      const [date, rank, pid] = line.split(",");
+      if (date !== latestDate) continue;
+      const name = playerNames.get(pid);
+      if (name && rank) map.set(`name:${name}`, Number(rank));
+    }
+    return map;
+  } catch {
+    return new Map();
+  }
+}
+
 async function fetchAllRankings(): Promise<Map<string, number>> {
-  const [atpRes, wtaRes] = await Promise.all([
+  const [atpRes, wtaRes, atpExt, wtaExt] = await Promise.all([
     fetch("https://site.api.espn.com/apis/site/v2/sports/tennis/atp/rankings", { next: { revalidate: 300 } }),
     fetch("https://site.api.espn.com/apis/site/v2/sports/tennis/wta/rankings", { next: { revalidate: 300 } }),
+    buildExtendedRankings("atp"),
+    buildExtendedRankings("wta"),
   ]);
-  const map = new Map<string, number>();
+  // Start with extended name-keyed rankings, then overlay ESPN IDs (top 150, authoritative)
+  const map = new Map<string, number>([...atpExt, ...wtaExt]);
   for (const res of [atpRes, wtaRes]) {
     if (!res.ok) continue;
     const data = await res.json();
@@ -258,7 +289,9 @@ async function fetchESPNForm(
       tournament: eventName,
       surface: surfaceFromEventName(eventName, indoor),
       opponent: opponent.name ?? "Unknown",
-      opponentRank: rankings.get(String(opponent.id)) ?? null,
+      opponentRank: rankings.get(String(opponent.id))
+        ?? rankings.get(`name:${normName(opponent.name ?? "")}`)
+        ?? null,
     });
   }
 
