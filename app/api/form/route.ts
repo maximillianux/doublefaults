@@ -114,19 +114,37 @@ interface CoreCompetition {
   competitors?: CoreCompetitor[];
 }
 
+type EventlogItem = { event?: { $ref: string }; competition?: { $ref: string } };
+
+async function fetchEventlogItems(athleteId: string): Promise<EventlogItem[]> {
+  const all: EventlogItem[] = [];
+  let page = 1;
+  const pageSize = 25;
+
+  while (all.length < 40) {  // cap at 40 raw items to avoid runaway
+    const res = await fetch(
+      `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog` +
+        `?season=2026&limit=${pageSize}&page=${page}`,
+      { next: { revalidate: 300 } }
+    );
+    if (!res.ok) break;
+    const data = await res.json();
+    const items: EventlogItem[] = data?.events?.items ?? [];
+    all.push(...items);
+
+    const pageCount: number = data?.events?.pageCount ?? 1;
+    if (page >= pageCount || items.length < pageSize) break;
+    page++;
+  }
+
+  return all;
+}
+
 async function fetchForm(
   athleteId: string,
   rankings: Map<string, number>
 ): Promise<FormMatch[]> {
-  const logRes = await fetch(
-    `https://sports.core.api.espn.com/v2/sports/tennis/athletes/${athleteId}/eventlog?season=2026&limit=20`,
-    { next: { revalidate: 300 } }
-  );
-  if (!logRes.ok) return [];
-
-  const log = await logRes.json();
-  const items: { event?: { $ref: string }; competition?: { $ref: string } }[] =
-    log?.events?.items ?? [];
+  const items = await fetchEventlogItems(athleteId);
   if (!items.length) return [];
 
   const uniqueEventRefs = [
