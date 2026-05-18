@@ -336,7 +336,7 @@ export async function GET(req: Request) {
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean)
-    .slice(0, 60)
+    .slice(0, 30)
     .map((s) => {
       const colon = s.indexOf(":");
       return { id: s.slice(0, colon), name: decodeURIComponent(s.slice(colon + 1)) };

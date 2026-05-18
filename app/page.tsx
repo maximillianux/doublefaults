@@ -322,10 +322,16 @@ export default function HomePage() {
         const players = [...playerMap.entries()]
           .map(([id, name]) => `${id}:${encodeURIComponent(name)}`);
 
-        fetch(`/api/form?players=${players.join(",")}`)
-          .then((r) => r.json())
-          .then(setFormData)
-          .catch(() => {});
+        // Grand Slams have 200+ players — batch into groups of 30 so we don't
+        // hit URL length limits, the 60-player server cap, or Vercel timeouts.
+        const BATCH = 30;
+        for (let i = 0; i < players.length; i += BATCH) {
+          const chunk = players.slice(i, i + BATCH);
+          fetch(`/api/form?players=${chunk.join(",")}`)
+            .then((r) => r.json())
+            .then((batch) => setFormData((prev) => ({ ...prev, ...batch })))
+            .catch(() => {});
+        }
       })
       .catch(() => { setError(true); setLoading(false); });
   }, [selectedDate]);
