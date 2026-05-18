@@ -309,13 +309,20 @@ export default function HomePage() {
         setData(d);
         setLoading(false);
 
-        const ids = [...d.atp, ...d.wta]
-          .flatMap((t) => t.matches.flatMap((m) => m.players.map((p) => p.athleteId)))
-          .filter(Boolean);
-        const unique = [...new Set(ids)];
-        if (!unique.length) return;
+        // Send id:name pairs so the form endpoint can match JeffSackmann CSV by name
+        const playerMap = new Map<string, string>();
+        for (const arr of [d.atp, d.wta])
+          for (const t of arr)
+            for (const m of t.matches)
+              for (const p of m.players)
+                if (p.athleteId && !playerMap.has(p.athleteId))
+                  playerMap.set(p.athleteId, p.name);
 
-        fetch(`/api/form?ids=${unique.join(",")}`)
+        if (!playerMap.size) return;
+        const players = [...playerMap.entries()]
+          .map(([id, name]) => `${id}:${encodeURIComponent(name)}`);
+
+        fetch(`/api/form?players=${players.join(",")}`)
           .then((r) => r.json())
           .then(setFormData)
           .catch(() => {});
