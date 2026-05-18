@@ -91,6 +91,11 @@ function parseEvent(
       const [p1, p2] = comp.competitors ?? [];
       if (!p1 || !p2) continue;
 
+      // Skip matches where either player hasn't been determined yet
+      const p1Name = p1.athlete?.displayName ?? p1.athlete?.shortName ?? "";
+      const p2Name = p2.athlete?.displayName ?? p2.athlete?.shortName ?? "";
+      if (!p1Name || !p2Name || p1Name.toLowerCase() === "tbd" || p2Name.toLowerCase() === "tbd") continue;
+
       matches.push({
         id: comp.id,
         date: comp.date,
